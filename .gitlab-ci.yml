@@ -1,0 +1,47 @@
+stages:
+  - .pre
+  - test  # Stage valide pour le SAST
+  - .post
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
+sast_modified_files:
+  stage: test
+  rules:
+    - changes:
+        - "*.php"
+        - "*.js"
+        - "*.py"
+    - if: '$CI_MERGE_REQUEST_ID'
+  script:
+    - echo "Vérification des fichiers modifiés dans ce commit..."
+    - MODIFIED_FILES=$(git diff --name-only $CI_COMMIT_BEFORE_SHA $CI_COMMIT_SHA | grep -E '\.php|\.js|\.py' || true)
+    - |
+      if [ -n "$MODIFIED_FILES" ]; then
+        echo "Fichiers modifiés :"
+        for file in $MODIFIED_FILES; do
+          echo "- $file"
+        done
+        echo "Lancement de l'analyse SAST sur les fichiers modifiés..."
+        
+        # Analyser les fichiers modifiés selon leur extension
+        for file in $MODIFIED_FILES; do
+          if [[ "$file" == *.php ]]; then
+            echo "Analyse PHP avec phpcs-security-audit"
+            phpcs --standard=phpcs-security-audit --extensions=php "$file"
+          elif [[ "$file" == *.js ]]; then
+            echo "Analyse JavaScript avec ESLint"
+            eslint "$file"
+          elif [[ "$file" == *.py ]]; then
+            echo "Analyse Python avec bandit"
+            bandit -r "$file"
+          fi
+        done
+      else
+        echo "Aucun fichier pertinent modifié, pas d'analyse SAST."
+      fi
+  allow_failure: false
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
